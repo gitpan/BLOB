@@ -1,0 +1,6 @@
+Revision history for Perl extension BLOB.
+
+0.01  Tue May 20 22:54:36 2008
+	- original version; created by h2xs 1.23 with options
+		-Xn BLOB
+
