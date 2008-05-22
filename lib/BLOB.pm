@@ -1,12 +1,19 @@
 package BLOB;
 use strict;
 use Carp qw(carp);
+use Exporter ();
 
-our $VERSION = '1.00';
+# No "our" in Perl 5.0
+use vars qw(@ISA $VERSION @EXPORT);
 
-# Fallback for pre-5.8 Perl versions
+$VERSION = '1.01';
+@ISA     = qw(Exporter);
+@EXPORT  = qw(mark_blob is_blob);
+
+# Fallback for Perl < 5.8
 *utf8::downgrade = sub { 1 } if not defined &utf8::downgrade;
 
+# Class method
 sub mark {
     my $class = shift;
     my $blob_ref = \shift;
@@ -17,9 +24,12 @@ sub mark {
     bless $blob_ref, $class;
 }
 
-use base 'Exporter';
-our @EXPORT = qw(is_blob);
+# Function
+sub mark_blob {
+    BLOB->mark($_[0]);
+}
 
+# Function
 sub is_blob {
     my $blob_ref = \shift;
     return undef if not eval { $blob_ref->isa('BLOB') };
@@ -42,8 +52,13 @@ BLOB - Perl extension for explicitly marking binary strings
 
     use BLOB;
 
-    BLOB->mark($jpeg_data);
-    print is_blob($jpeg_data);  # 1
+    mark_blob($jpeg_data);
+
+    if (is_blob $jpeg_data) {
+        ...
+    } else {
+        ...
+    }
 
     my $bytes = is_blob($foo) ? $foo : encode_utf8($foo);
 
@@ -63,16 +78,17 @@ and module users do not have to learn a plethora of different syntaxes.
 The name F<BLOB> historically stands for Binary Large OBject, but small strings
 are of course also supported.
 
-BLOB supports Perl versions all the way back to 5.000 and has no external
+BLOB supports Perl versions all the way back to 5.0 and has no external
 dependencies.
 
-=head1 FUNCTIONS
+=head1 FUNCTION INTERFACE
 
-The following functions are provided by this module:
+The function interface provides the basic interface. The following functions
+are provided by this module and exported by default:
 
 =over 4
 
-=item BLOB->mark($string)
+=item mark_blob($string)
 
 Marks the string as a blob. The string can be used as before; it should be safe
 to mark strings as blobs in existing code.
@@ -83,10 +99,94 @@ Note that a copy of a blob is not marked automatically.
 
 Returns true if the string is a blob, false if the string is not a blob.
 
-Exported by default.
+=back
+
+=head1 OBJECT INTERFACE
+
+The function interface provides basic functionality, but no means of extension.
+With the object interface, class inheritance can be used to provide additional
+functionality.
+
+To use a BLOB as an object, use the special syntax C<(\$blob)>. Because $blob
+remains a normal variable that can be used like any other string, the C<\> is
+needed to indicate that you're going to use it as an object.
+
+Before using a BLOB as an object, test that it actually is a blob with the
+C<is_blob> function, because a normal non-BLOB string cannot be used as an object.
+
+    if (is_blob $foo) {
+        (\$foo)->method(...);
+        # Without the is_blob test, this would fail if $foo is a normal string
+    }
+
+=over 4
+
+=item BLOB->mark($string)
+
+This is the same as mark_blob, but extensible with subtypes. It is possible
+that a certain kind of BLOB has a constructor (typically called C<new>) instead
+of C<mark>.
+
+Blesses C<$string> and returns a reference to it.
+
+=item (\$string)->isa($class)
+
+(Inherited from UNIVERSAL.) Returns true if the BLOB belongs to a certain
+class.
+
+=item (\$string)->can($method)
+
+(Inherited from UNIVERSAL.) Returns a code reference to the method if it is
+supported, or undef otherwise.
 
 =back
 
+The base BLOB implementation does not provide any object methods except those
+provided by Perl's UNIVERSAL class. Decorated BLOBs might provide additional
+methods.
+
+=head1 USING ALIASING
+
+There are two compelling reasons to use aliasing techniques with blobs, instead
+of copying the values like normal variable assignment does. One is that blobs
+can get very large, and copying large values imposes a big memory and
+performance penalty. The other is that the indication that something is a blob,
+as set by C<mark_blob> or C<< BLOB->mark >>, is not retained in a copy.
+
+There are several ways of addressing the actual variable instead of copying it:
+
+=over 4
+
+=item Use the alias in the @_ array.
+
+    my ($self, undef, $arg_2) = @_;
+    if (is_blob $_[1]) { ... }
+
+=item Use Data::Alias
+
+    alias my ($self, $string, $arg_2) = @_;
+    if (is_blob $string) { ... }
+
+=item Use a reference to the alias in @_
+
+    my ($self, undef, $arg_2) = @_;
+    my $string_ref = \$_[1];
+    if (is_blob $$string_ref) { ... }
+
+=item Require that the variable is passed with an explicit reference
+
+    my ($self, $$string_ref, $arg_2) = @_;
+    if (is_blob $$string_ref) { ... }
+
+=back
+
+In any case, the following won't work:
+
+    my ($self, $string, $arg_2) = @_;
+    if (is_blob $string) { ... }
+
+This does not work because C<$string> is a copy, and copies don't automatically
+get the BLOB mark.
 =head1 PROGRAMMING LOGIC ERRORS
 
 Byte operations should be separated from text operations in programming, with
@@ -129,10 +229,17 @@ impossible.
 
 =head1 TO DO
 
-It would be nice if BLOB would intercept internal string encoding upgrades, and
-downgrade immediately. This would allow a warning to be emitted at the point
-where the source of the problem is, making debugging unintended text+binary
-concatenations easier.
+=over 0
+
+=item * It would be nice if BLOB would intercept internal string encoding
+upgrades, and downgrade immediately. This would allow a warning to be emitted
+at the point where the source of the problem is, making debugging unintended
+text+binary concatenations easier.
+
+=item * Compose a document that describes the best practices for documenting
+modules that specifically support marked blobs.
+
+=back
 
 =head1 AUTHOR
 
